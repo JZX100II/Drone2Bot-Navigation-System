@@ -10,9 +10,6 @@ import numpy as np
 from controller import Robot
 import matplotlib.pyplot as plt
 from pyzbar.pyzbar import decode
-import json
-import os
-
 
 try:
     import numpy as np
@@ -31,8 +28,7 @@ class Mavic(Robot):
     MAX_YAW_DISTURBANCE = 5
     MAX_PITCH_DISTURBANCE = -1
     TARGET_PRECISION = 0.5
-    # LIDAR_MAX_RANGE = 1.0
-    LIDAR_MAX_RANGE = 2.0
+    LIDAR_MAX_RANGE = 1.0
     
     MAX_SPEED = 0.5  # Maximum speed in meters/second
     SPEED_GAIN = 0.1  # Proportional gain for speed adjustment
@@ -76,7 +72,7 @@ class Mavic(Robot):
         self.target_index = 0
         self.target_altitude = 0
         self.map = []
-        self.qr_codes = {}
+        self.qr_codes = []
         self.just_reached = False  # Flag to track if waypoint was just reached
         self.previous_position = [0, 0, 0]  # To calculate velocity
         self.current_velocity = [0, 0, 0]   # To store velocity
@@ -152,21 +148,6 @@ class Mavic(Robot):
 
         return adjusted_inputs
 
-    def save_qr_codes(self, filename="qr_codes.json"):
-        """
-        Save the qr_codes dictionary to a JSON file.
-        """
-        if not hasattr(self, "qr_codes"):
-            print("⚠️ self.qr_codes not found!")
-            return
-
-        try:
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(self.qr_codes, f, indent=4, ensure_ascii=False)
-            print(f"✅ QR codes saved to {os.path.abspath(filename)}")
-        except Exception as e:
-            print(f"❌ Error saving QR codes: {e}")
-
     def visualize_map(self):
         if not self.map:
             print("⚠️ No points in self.map to visualize.")
@@ -176,15 +157,15 @@ class Mavic(Robot):
         x_coords, y_coords = zip(*self.map) if self.map else ([], [])
 
         # Create a new figure
-        # plt.figure(figsize=(8, 8))
-        # plt.scatter(x_coords, y_coords, c='blue', s=10, label='LIDAR Points')
-        # plt.title(f'LIDAR Map (Waypoint {self.target_index})')
-        # plt.xlabel('X Coordinate (meters)')
-        # plt.ylabel('Y Coordinate (meters)')
-        # plt.grid(True)
-        # plt.legend()
-        # plt.axis('equal')  # Ensure equal scaling for x and y axes
-        # plt.show()
+        plt.figure(figsize=(8, 8))
+        plt.scatter(x_coords, y_coords, c='blue', s=10, label='LIDAR Points')
+        plt.title(f'LIDAR Map (Waypoint {self.target_index})')
+        plt.xlabel('X Coordinate (meters)')
+        plt.ylabel('Y Coordinate (meters)')
+        plt.grid(True)
+        plt.legend()
+        plt.axis('equal')  # Ensure equal scaling for x and y axes
+        plt.show()
     
     def rotate(self, amount):
         self.yaw_disturbance = amount
@@ -228,7 +209,7 @@ class Mavic(Robot):
                     qr_y = curr_pose[1] + delta_y
                     
                     # Store QR data with position
-                    self.qr_codes[qr_data] = (qr_x, qr_y)
+                    self.qr_codes.append((qr_x, qr_y, qr_data))
                     print(f"QR Position: ({qr_x:.2f}, {qr_y:.2f})")
 
                 cv2.imwrite(f'qr_detection_{self.target_index}.png', image)
@@ -245,17 +226,18 @@ class Mavic(Robot):
         distance = np.linalg.norm(np.array(self.target_position[:2]) - np.array(self.current_pose[:2]))
         if distance < self.TARGET_PRECISION and not self.just_reached:
             # if self.scan_qr_code == False:
-            self.update_map()
-            self.visualize_map()
+            # self.update_map()
+            # self.visualize_map()
             
             # if self.scan_qr_code == True:
-            # self.scan_qr_codes()
-            
+            self.scan_qr_codes()
             self.just_reached = True
             self.target_index += 1
-            if self.target_index > len(waypoints) - 1:
-                return
             
+            # circular: 
+            # if self.target_index > len(waypoints) - 1:
+            #     self.target_index = 0
+
             # if self.target_index > len(waypoints) - 1:
             #     self.target_index = 0
             #     self.waypoints = self.scan_waypoints
@@ -286,7 +268,8 @@ class Mavic(Robot):
         return yaw_disturbance, pitch_disturbance
 
     def run(self):
-        timer = self.getTime()
+        starting_time = self.getTime()
+        t1 = self.getTime()
         roll_disturbance = 0
         pitch_disturbance = 0
         yaw_disturbance = 0
@@ -294,24 +277,39 @@ class Mavic(Robot):
         # route_1
         # self.waypoints = [[-6, -7.6], [-5, -7.6], [-4, -7.6], [-3, -7.6], [-2, -7.6], [-1.2, -7.6], [-0.755, -6], [-1.2, -7.6], [-2.06, -7.6], [-2.1, -8.9], [-1.27, -8.93], [-1.27, -10.0], [-1.27, -8.93], [-2.1, -8.9], [-2.06, -7.6], [-4.7, -7.6], [-4.8, -9.25], [-4.81, -10.7], [-4.8, -7.6], [-6.05, -7.6], [-6.14, -9.0], [-6.77, -9.01], [-6.77, -10.3], [-6.77, -11.3], [-6.77, -9.0], [-6.05, -9.0], [-6.05, -7.6], [-6.11, -7.3], [-8.2, -7.3], [-6.11, -7.3], [-6, -7.6]]
         # you can set some points that not necessarily have qr codes but reaching them is good for scanning
+        self.waypoints = [[-1.2, -7.6], [-0.755, -6.9], [-2.0, -7.3], [-2.12, -8.3], [-2.12, -7.3], [-5.0, -7.25], [-5.12, -8.15]]
+        self.scan_waypoints = []
+
+        # self.rotate(0.5)
         
-        # self.waypoints = [[-5, -7.6], [-4, -7.6], [-3, -7.6], [-2, -7.6], [-1, -7.6], [-0.5, -7.6]]
-        # self.lidar_waypoints = [[-5, -7.6], [-4, -7.6], [-3, -7.6], [-2, -7.6], [-1, -7.6], [-0.5, -7.6], [-5, -7.6], [-6, -7.6], [-5.55, -5.76], [-4.96, -4.64], [-4.16, -3.98]]
-        self.waypoints = [[-5, -7.6], [-4, -7.6], [-3, -7.6], [-2, -7.6], [-1, -7.6], [-0.5, -7.6], [-5, -7.6], [-6, -7.6], [-5.55, -5.76], [-4.96, -4.64], [-4.16, -3.98]]
-        # self.qr_waypoints = []
+        # route_2
+        # box and washing machine
+        # [-1.2, -7.6], [-0.755, -6], [-1.2, -7.6], [-1.665, -7.6]
+
+        # route_3
+        # bedroom
+        # [-2.1, -8.9], [-1.34, -9.04], [-1.66, -9.04], [-1.665, -7.6], [-4.7, -7.6]
+
+        # route_4
+        # bathroom and tub
+        # [-4.7, -7.6], [-4.8, -9.25], [-4.81, -10.7], [-4.8, -7.6]
+
+        # route_5
+        # bedroom
+        # [-6.05, -7.6], [-6.14, -9.0], [-6.77, -9.01], [-6.77, -10.3], [-6.77, -11.3], [-6.14, -9.0], [-6.05, -7.6]
+
+        # route_6
+        # toilet
+        # [-6.11, -7.3], [-8.2, -7.3], [-6.11, -7.3], [-6, -7.6]
 
         # lidar scanning
         self.target_altitude = 0.2
-        self.TARGET_PRECISION = 0.15
 
         # qr code scanning
         # self.target_altitude = 1.2
-        # self.TARGET_PRECISION = 0.5
+        self.TARGET_PRECISION = 0.5
         
         while self.step(self.time_step) != -1:
-            if self.target_index >= len(self.waypoints) - 1:
-                break
-
             roll, pitch, yaw = self.imu.getRollPitchYaw()
             rollVelocity = self.gyro.getValues()[0]
             pitchVelocity = self.gyro.getValues()[1]
@@ -324,12 +322,10 @@ class Mavic(Robot):
             self.set_position([x_pos, y_pos, altitude, roll, pitch, yaw])
 
             if altitude > self.target_altitude - 1:
-                if self.getTime() - timer > 0.1:
-                    # yaw_disturbance, pitch_disturbance = self.move_to_target(
-                    #     self.lidar_waypoints, verbose_movement=True)
+                if self.getTime() - t1 > 0.1:
                     yaw_disturbance, pitch_disturbance = self.move_to_target(
                         self.waypoints, verbose_movement=True)
-                    timer = self.getTime()
+                    t1 = self.getTime()
 
             roll_input = self.K_ROLL_P * clamp(roll, -1, 1) + roll_acceleration + roll_disturbance
             pitch_input = self.K_PITCH_P * clamp(pitch, -1, 1) + pitch_acceleration + pitch_disturbance
@@ -354,13 +350,12 @@ class Mavic(Robot):
             self.rear_left_motor.setVelocity(-adjusted_inputs[2])
             self.rear_right_motor.setVelocity(adjusted_inputs[3])
 
+            # if self.target_index >= len(self.waypoints):
             #     map_complete = True
 
-            self.scan_qr_codes()
+            # self.scan_qr_codes()
             # if map_complete and not hasattr(self, 'qr_scanned'):
             # self.qr_scanned = True  # Flag to avoid re-scanning
-        
-        self.save_qr_codes()
 
 robot = Mavic()
 robot.run()

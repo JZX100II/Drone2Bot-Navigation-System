@@ -5628,6 +5628,7 @@ Robot {
       numberOfLayers 1
       near 0.2
       minRange 0.2
+      maxRange 3.5
       type "rotating"
       projection "planar"
       rotatingHead Solid {
